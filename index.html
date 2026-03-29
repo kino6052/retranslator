@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=yes"
+    />
+    <title>Mic Loopback · Real‑time audio relay for translation tools</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        user-select: none;
+      }
+
+      body {
+        background: linear-gradient(145deg, #10131c 0%, #1a1f2c 100%);
+        font-family:
+          "Inter",
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          "Helvetica Neue",
+          sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        margin: 0;
+        padding: 20px;
+      }
+
+      .card {
+        max-width: 780px;
+        width: 100%;
+        background: rgba(22, 26, 35, 0.85);
+        backdrop-filter: blur(10px);
+        border-radius: 2.5rem;
+        box-shadow:
+          0 25px 45px -12px rgba(0, 0, 0, 0.6),
+          0 0 0 1px rgba(255, 255, 255, 0.05);
+        padding: 1.8rem 2rem 2.2rem;
+        transition: all 0.2s;
+      }
+
+      h1 {
+        font-size: 1.85rem;
+        font-weight: 600;
+        margin: 0 0 0.3rem 0;
+        background: linear-gradient(135deg, #ffffff 0%, #b0c4ff 100%);
+        background-clip: text;
+        -webkit-background-clip: text;
+        color: transparent;
+        letter-spacing: -0.3px;
+      }
+
+      .sub {
+        color: #8e9aaf;
+        margin-bottom: 1.5rem;
+        font-weight: 450;
+        border-left: 3px solid #3b82f6;
+        padding-left: 0.75rem;
+        font-size: 0.95rem;
+      }
+
+      .warning-badge {
+        background: rgba(245, 158, 11, 0.18);
+        border-left: 4px solid #f59e0b;
+        border-radius: 1rem;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1.8rem;
+        font-size: 0.85rem;
+        color: #ffdfb3;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .warning-badge span:first-child {
+        font-weight: 600;
+        background: #f59e0b20;
+        padding: 4px 12px;
+        border-radius: 40px;
+        font-size: 0.75rem;
+        letter-spacing: 0.3px;
+      }
+
+      .control-group {
+        background: #0f1219cc;
+        border-radius: 1.8rem;
+        padding: 1.2rem 1.5rem;
+        margin-bottom: 1.5rem;
+        backdrop-filter: blur(4px);
+        border: 1px solid #2a2f3e;
+      }
+
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1.2rem;
+      }
+
+      .row:last-child {
+        margin-bottom: 0;
+      }
+
+      label {
+        font-weight: 500;
+        color: #cdd9ff;
+        font-size: 0.85rem;
+        letter-spacing: 0.3px;
+        min-width: 100px;
+      }
+
+      select,
+      button {
+        background: #1e2436;
+        border: 1px solid #353d52;
+        border-radius: 2rem;
+        padding: 0.6rem 1.2rem;
+        color: white;
+        font-weight: 500;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        outline: none;
+        font-family: inherit;
+      }
+
+      select {
+        background: #10131e;
+        flex: 1;
+        min-width: 180px;
+      }
+
+      select:hover,
+      button:hover {
+        border-color: #5f7ef2;
+        background: #252e44;
+      }
+
+      button {
+        background: #2d374b;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        justify-content: center;
+      }
+
+      .btn-primary {
+        background: #3b82f6;
+        border-color: #3b82f6;
+        box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3);
+      }
+
+      .btn-primary:hover {
+        background: #2563eb;
+        transform: scale(0.98);
+      }
+
+      .btn-danger {
+        background: #dc2626;
+        border-color: #dc2626;
+      }
+
+      .btn-danger:hover {
+        background: #b91c1c;
+      }
+
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #11161f;
+        padding: 0.45rem 1rem;
+        border-radius: 60px;
+        font-size: 0.8rem;
+        font-weight: 500;
+      }
+
+      .led {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #4b5563;
+        box-shadow: 0 0 2px currentColor;
+        transition: all 0.1s;
+      }
+
+      .led.active {
+        background: #10b981;
+        box-shadow: 0 0 6px #10b981;
+      }
+
+      .volume-slider {
+        flex: 2;
+        min-width: 160px;
+        display: flex;
+        gap: 15px;
+        align-items: center;
+      }
+
+      input[type="range"] {
+        flex: 1;
+        height: 4px;
+        -webkit-appearance: none;
+        background: #2d3448;
+        border-radius: 10px;
+        outline: none;
+      }
+
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 16px;
+        height: 16px;
+        background: #3b82f6;
+        border-radius: 50%;
+        cursor: pointer;
+        border: none;
+        box-shadow: 0 0 4px #3b82f6;
+      }
+
+      .meter-container {
+        background: #090c12;
+        border-radius: 40px;
+        padding: 0.2rem;
+        margin-top: 0.8rem;
+        height: 8px;
+        width: 100%;
+        position: relative;
+      }
+
+      .meter-fill {
+        width: 0%;
+        height: 100%;
+        background: linear-gradient(90deg, #3b82f6, #a855f7);
+        border-radius: 40px;
+        transition: width 0.05s linear;
+      }
+
+      .value-text {
+        font-size: 0.75rem;
+        color: #8e9aaf;
+        font-family: monospace;
+      }
+
+      .flex-btns {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+      }
+
+      footer {
+        font-size: 0.7rem;
+        text-align: center;
+        margin-top: 2rem;
+        color: #5f6c8a;
+        border-top: 1px solid #252c3b;
+        padding-top: 1.2rem;
+      }
+
+      @media (max-width: 550px) {
+        .card {
+          padding: 1.2rem;
+        }
+        .row {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .volume-slider {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>🎤 Mic Loopback · Audio Relay</h1>
+      <div class="sub">
+        Route microphone directly to speakers — feed any translation software
+        that listens to system audio output.
+      </div>
+
+      <div class="warning-badge">
+        <span>⚠️ FEEDBACK WARNING</span>
+        <span
+          >Use HEADPHONES to avoid howling. This tool plays mic audio through
+          your speakers/headphones in real time.</span
+        >
+      </div>
+
+      <div class="control-group">
+        <div class="row">
+          <label>🎙️ Input mic</label>
+          <select id="inputDeviceSelect" title="Select microphone device">
+            <option value="">— Default microphone —</option>
+          </select>
+          <div class="status-chip">
+            <div class="led" id="statusLed"></div>
+            <span id="statusText">Inactive</span>
+          </div>
+        </div>
+
+        <div class="row">
+          <label>🔊 Output gain</label>
+          <div class="volume-slider">
+            <input
+              type="range"
+              id="gainSlider"
+              min="0"
+              max="2.0"
+              step="0.01"
+              value="1.0"
+            />
+            <span id="gainValue" class="value-text">100%</span>
+          </div>
+        </div>
+
+        <div class="meter-container">
+          <div class="meter-fill" id="meterFill"></div>
+        </div>
+        <div
+          style="display: flex; justify-content: space-between; margin-top: 5px"
+        >
+          <span class="value-text">Mic level</span>
+          <span id="levelDb" class="value-text">-∞ dB</span>
+        </div>
+
+        <div class="flex-btns">
+          <button id="startBtn" class="btn-primary">▶ START LOOPBACK</button>
+          <button id="stopBtn" class="btn-danger" disabled>⏹ STOP</button>
+        </div>
+        <p style="font-size: 0.7rem; margin-top: 12px; color: #7c8aa5">
+          ✅ Low-latency real-time audio path: microphone → (gain) →
+          speakers/headphones.<br />
+          Perfect companion for translation apps (Google Translate, DeepL, etc.)
+          that rely on audio output capture.
+        </p>
+      </div>
+      <footer>
+        ⚡ Immediate retransmission | Works with any translation software that
+        listens to system sound.<br />
+        Built with Web Audio API — no server, full privacy.
+      </footer>
+    </div>
+
+    <script>
+      // ------------------- DOM Elements -------------------
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      const statusLed = document.getElementById("statusLed");
+      const statusText = document.getElementById("statusText");
+      const gainSlider = document.getElementById("gainSlider");
+      const gainValueSpan = document.getElementById("gainValue");
+      const meterFill = document.getElementById("meterFill");
+      const levelDbSpan = document.getElementById("levelDb");
+      const inputDeviceSelect = document.getElementById("inputDeviceSelect");
+
+      // ------------------- Global State -------------------
+      let mediaStream = null; // current microphone stream
+      let audioContext = null; // Web Audio context
+      let sourceNode = null; // MediaStreamSourceNode
+      let gainNode = null; // GainNode
+      let analyserNode = null; // AnalyserNode for metering
+      let animationFrameId = null; // requestAnimationFrame ID
+      let isLoopbackActive = false; // flag to know if we are actively routing
+
+      // ------------------- Helper: update gain display & actual gain node -------------------
+      function updateGainDisplay() {
+        const val = parseFloat(gainSlider.value);
+        const percent = Math.round(val * 100);
+        gainValueSpan.innerText = `${percent}%`;
+        if (gainNode) {
+          gainNode.gain.value = val;
+        }
+      }
+
+      // ------------------- Level meter (RMS using AnalyserNode) -------------------
+      function startMeterUpdate() {
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+          animationFrameId = null;
+        }
+
+        if (!analyserNode || !audioContext || audioContext.state === "closed") {
+          // no valid analyser, just reset meter visuals
+          if (meterFill) meterFill.style.width = "0%";
+          if (levelDbSpan) levelDbSpan.innerText = "-∞ dB";
+          return;
+        }
+
+        const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+
+        function updateMeter() {
+          // Stop if the audio graph is gone or loopback is fully stopped
+          if (
+            !isLoopbackActive ||
+            !analyserNode ||
+            !audioContext ||
+            audioContext.state === "closed"
+          ) {
+            // Ensure meter stops when not active
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+            return;
+          }
+
+          try {
+            analyserNode.getByteTimeDomainData(dataArray);
+            let sumSquares = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+              const v = (dataArray[i] - 128) / 128;
+              sumSquares += v * v;
+            }
+            let rms = Math.sqrt(sumSquares / dataArray.length);
+            let level = Math.min(1.0, rms * 2.5);
+            let percent = Math.floor(level * 100);
+            meterFill.style.width = `${percent}%`;
+
+            let db = -Infinity;
+            if (rms > 0.0001) {
+              db = 20 * Math.log10(rms);
+              db = Math.max(db, -60);
+            }
+            let dbDisplay = db === -Infinity ? "-∞" : `${Math.round(db)} dB`;
+            levelDbSpan.innerText = dbDisplay;
+          } catch (e) {
+            // silent fail
+          }
+
+          animationFrameId = requestAnimationFrame(updateMeter);
+        }
+
+        updateMeter();
+      }
+
+      // ------------------- FULL CLEANUP (stop everything) -------------------
+      async function fullStop() {
+        // cancel meter animation
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+          animationFrameId = null;
+        }
+
+        // disconnect & close audio context
+        if (audioContext) {
+          try {
+            if (sourceNode) {
+              sourceNode.disconnect();
+              sourceNode = null;
+            }
+            if (gainNode) {
+              gainNode.disconnect();
+              gainNode = null;
+            }
+            if (analyserNode) {
+              analyserNode.disconnect();
+              analyserNode = null;
+            }
+            await audioContext.close();
+          } catch (e) {
+            console.warn("AudioContext close error", e);
+          }
+          audioContext = null;
+        }
+
+        // stop all microphone tracks
+        if (mediaStream) {
+          mediaStream.getTracks().forEach((track) => {
+            if (track.readyState === "live") track.stop();
+          });
+          mediaStream = null;
+        }
+
+        isLoopbackActive = false;
+
+        // Update UI
+        statusLed.classList.remove("active");
+        statusText.innerText = "Inactive";
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        meterFill.style.width = "0%";
+        levelDbSpan.innerText = "-∞ dB";
+      }
+
+      // ------------------- Build audio graph (stream -> gain -> analyser -> destination) -------------------
+      async function buildAudioGraph(stream) {
+        // close previous context if exists
+        if (audioContext) {
+          await audioContext.close();
+          audioContext = null;
+        }
+
+        // Create new AudioContext with low latency (interactive)
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({
+          latencyHint: "interactive",
+          sampleRate: 48000,
+        });
+
+        sourceNode = audioContext.createMediaStreamSource(stream);
+        gainNode = audioContext.createGain();
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 256;
+        analyserNode.smoothingTimeConstant = 0.3;
+
+        // set current gain from slider
+        const currentGain = parseFloat(gainSlider.value);
+        gainNode.gain.value = currentGain;
+
+        // Connect: source -> gain -> analyser -> speakers (destination)
+        sourceNode.connect(gainNode);
+        gainNode.connect(analyserNode);
+        analyserNode.connect(audioContext.destination);
+
+        // resume context (user gesture already handled by start button click)
+        if (audioContext.state === "suspended") {
+          await audioContext.resume();
+        }
+
+        // start meter visualisation (analyser now exists)
+        startMeterUpdate();
+        return true;
+      }
+
+      // ------------------- Request microphone with optional device ID (robust constraints) -------------------
+      async function getMicrophoneStream(deviceId = null) {
+        // build constraints: disable all audio processing for lowest latency
+        const constraints = {
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            latency: { ideal: 0.01 },
+          },
+        };
+        if (deviceId && deviceId !== "") {
+          constraints.audio.deviceId = { exact: deviceId };
+        }
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          return stream;
+        } catch (err) {
+          console.error("getUserMedia failed", err);
+          throw err;
+        }
+      }
+
+      // ------------------- Monitor track ended (external disconnect) -------------------
+      function monitorStreamEnded() {
+        if (!mediaStream) return;
+        mediaStream.getTracks().forEach((track) => {
+          track.onended = () => {
+            if (isLoopbackActive) {
+              console.warn(
+                "Microphone track ended unexpectedly. Stopping loopback.",
+              );
+              fullStop().catch(console.warn);
+              alert(
+                "Microphone was disconnected or permission revoked. Loopback stopped.",
+              );
+            }
+          };
+        });
+      }
+
+      // ------------------- START LOOPBACK (core logic) -------------------
+      async function startLoopback() {
+        if (isLoopbackActive) {
+          alert(
+            "Loopback already active. Press STOP first to change device or restart.",
+          );
+          return;
+        }
+
+        // Disable start button during async steps
+        startBtn.disabled = true;
+        startBtn.textContent = "⏳ REQUESTING MIC...";
+
+        try {
+          // 1. Get selected deviceId (if any)
+          let selectedDeviceId = inputDeviceSelect.value;
+          if (selectedDeviceId === "") selectedDeviceId = null;
+
+          // 2. Request microphone access
+          const stream = await getMicrophoneStream(selectedDeviceId);
+          mediaStream = stream;
+
+          // 3. Build full Web Audio pipeline (stream -> speakers)
+          await buildAudioGraph(stream);
+
+          // 4. Mark active
+          isLoopbackActive = true;
+
+          // 5. Monitor for unexpected track ends (unplug mic)
+          monitorStreamEnded();
+
+          // 6. Update UI
+          statusLed.classList.add("active");
+          statusText.innerText = "LIVE · mic ➜ speakers";
+          startBtn.disabled = false;
+          startBtn.textContent = "▶ START LOOPBACK";
+          stopBtn.disabled = false;
+
+          // 7. Ensure gain display reflects current node value (safety)
+          updateGainDisplay();
+        } catch (err) {
+          console.error("Start loopback error:", err);
+          let errorMsg = "Could not access microphone. ";
+          if (err.name === "NotAllowedError") {
+            errorMsg +=
+              "Permission denied. Please allow microphone access in your browser.";
+          } else if (err.name === "NotFoundError") {
+            errorMsg +=
+              "No microphone found. Plug in a mic and refresh device list.";
+          } else if (err.name === "NotReadableError") {
+            errorMsg += "Microphone is already in use by another application.";
+          } else if (err.message) {
+            errorMsg += err.message;
+          } else {
+            errorMsg += "Unknown error. Check console for details.";
+          }
+          alert(errorMsg);
+
+          // Cleanup any partial state
+          if (mediaStream) {
+            mediaStream.getTracks().forEach((t) => t.stop());
+            mediaStream = null;
+          }
+          if (audioContext) {
+            await audioContext.close().catch(() => {});
+            audioContext = null;
+          }
+          isLoopbackActive = false;
+          startBtn.disabled = false;
+          startBtn.textContent = "▶ START LOOPBACK";
+          stopBtn.disabled = true;
+          statusText.innerText = "Error";
+          statusLed.classList.remove("active");
+          meterFill.style.width = "0%";
+          levelDbSpan.innerText = "-∞ dB";
+        }
+      }
+
+      // ------------------- STOP LOOPBACK -------------------
+      async function stopLoopback() {
+        if (!isLoopbackActive && !audioContext && !mediaStream) {
+          stopBtn.disabled = true;
+          startBtn.disabled = false;
+          return;
+        }
+        stopBtn.disabled = true;
+        stopBtn.textContent = "⏹ STOPPING...";
+        await fullStop();
+        stopBtn.textContent = "⏹ STOP";
+        startBtn.disabled = false;
+      }
+
+      // ------------------- DEVICE LIST MANAGEMENT (with proper labels after permission) -------------------
+      async function refreshDeviceList() {
+        if (
+          !navigator.mediaDevices ||
+          !navigator.mediaDevices.enumerateDevices
+        ) {
+          console.warn("enumerateDevices not supported");
+          return;
+        }
+
+        let hasTempPermission = false;
+        // Try to get temporary audio permission to reveal friendly labels (only if not already active)
+        // but avoid duplicate popup if loopback is active (already has permission)
+        if (!isLoopbackActive) {
+          try {
+            // silent temporary stream to get permission (only if not already granted)
+            const tempStream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+            });
+            tempStream.getTracks().forEach((t) => t.stop());
+            hasTempPermission = true;
+          } catch (e) {
+            // permission denied or no mic; continue with limited labels
+            console.warn("Cannot get temporary mic access for labels", e);
+          }
+        }
+
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const audioInputs = devices.filter(
+            (device) => device.kind === "audioinput",
+          );
+
+          // store current selected value before rebuild
+          const previouslySelected = inputDeviceSelect.value;
+
+          // rebuild options
+          inputDeviceSelect.innerHTML =
+            '<option value="">— Default microphone —</option>';
+          audioInputs.forEach((device) => {
+            const option = document.createElement("option");
+            option.value = device.deviceId;
+            let label = device.label;
+            if (!label || label.trim() === "") {
+              label = `Microphone (${device.deviceId.slice(0, 5)}…)`;
+            }
+            option.textContent = label;
+            inputDeviceSelect.appendChild(option);
+          });
+
+          if (audioInputs.length === 0) {
+            const placeholder = document.createElement("option");
+            placeholder.disabled = true;
+            placeholder.textContent = "⚠️ No mic detected";
+            inputDeviceSelect.appendChild(placeholder);
+          }
+
+          // restore previous selection if it still exists
+          if (
+            previouslySelected &&
+            Array.from(inputDeviceSelect.options).some(
+              (opt) => opt.value === previouslySelected,
+            )
+          ) {
+            inputDeviceSelect.value = previouslySelected;
+          }
+        } catch (err) {
+          console.error("Failed to enumerate devices", err);
+        }
+      }
+
+      // ------------------- Auto-refresh device list when devices change (plug/unplug) -------------------
+      if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+        navigator.mediaDevices.addEventListener("devicechange", () => {
+          refreshDeviceList().catch(console.warn);
+        });
+      }
+
+      // ------------------- Handle device change while loopback active -------------------
+      inputDeviceSelect.addEventListener("change", async () => {
+        if (isLoopbackActive) {
+          const shouldRestart = confirm(
+            "Microphone device changed while loopback is active. Restart with new microphone?",
+          );
+          if (shouldRestart) {
+            await stopLoopback();
+            await startLoopback();
+          } else {
+            // revert selection to previous device (we could keep but not needed)
+            // refresh device list but keep previous? we just refresh to stay in sync
+            await refreshDeviceList();
+          }
+        }
+      });
+
+      // ------------------- Gain slider event -------------------
+      gainSlider.addEventListener("input", () => {
+        updateGainDisplay();
+      });
+
+      // ------------------- Button listeners -------------------
+      startBtn.addEventListener("click", () => {
+        startLoopback();
+      });
+
+      stopBtn.addEventListener("click", () => {
+        stopLoopback();
+      });
+
+      // ------------------- Additional: ensure audio context starts after user gesture (already fine) -------------------
+      // Also handle page visibility: no special action needed.
+
+      // ------------------- On page load: populate devices (lightweight), setup gain display -------------------
+      refreshDeviceList().catch(console.warn);
+      updateGainDisplay();
+
+      // ------------------- Cleanup on page unload (release resources) -------------------
+      window.addEventListener("beforeunload", () => {
+        if (mediaStream) {
+          mediaStream.getTracks().forEach((track) => track.stop());
+        }
+        if (audioContext) {
+          audioContext.close().catch(() => {});
+        }
+      });
+
+      // Optional: Recover from audio context suspension due to phone calls etc.
+      document.addEventListener("click", async () => {
+        if (
+          isLoopbackActive &&
+          audioContext &&
+          audioContext.state === "suspended"
+        ) {
+          await audioContext.resume();
+          console.log("AudioContext resumed after user interaction");
+        }
+      });
+
+      console.log(
+        "✅ Mic Loopback ready — use headphones, select mic, press START.",
+      );
+    </script>
+  </body>
+</html>
