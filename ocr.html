@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>Typography OCR - Hobby Project</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        background: #000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          monospace;
+      }
+      .container {
+        position: relative;
+        width: 100%;
+        max-width: 600px;
+        margin: auto;
+      }
+      video {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 12px;
+      }
+      /* The "capture region" overlay – like Pleco's box */
+      .capture-zone {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 70%;
+        height: 25%;
+        border: 3px solid #ffcc00;
+        border-radius: 12px;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+        pointer-events: none;
+        transition: all 0.2s;
+      }
+      .capture-zone::after {
+        content: "🔍 SCAN AREA";
+        position: absolute;
+        bottom: -28px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #ffcc00;
+        color: #000;
+        font-size: 12px;
+        font-weight: bold;
+        padding: 2px 8px;
+        border-radius: 20px;
+        white-space: nowrap;
+      }
+      .result {
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(8px);
+        color: #ffcc00;
+        padding: 12px 16px;
+        margin-top: 12px;
+        border-radius: 28px;
+        font-size: 1.1rem;
+        font-weight: 500;
+        text-align: center;
+        word-break: break-word;
+        border: 1px solid #ffcc00;
+      }
+      .status {
+        color: #aaa;
+        font-size: 0.8rem;
+        text-align: center;
+        margin-top: 8px;
+      }
+      button {
+        background: #ffcc00;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 40px;
+        font-weight: bold;
+        margin-top: 8px;
+        cursor: pointer;
+      }
+      @media (max-width: 600px) {
+        .capture-zone {
+          width: 85%;
+          height: 20%;
+        }
+        .result {
+          font-size: 1rem;
+        }
+      }
+    </style>
+    <!-- Tesseract.js – easy, works great for printed typography -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  </head>
+  <body>
+    <div class="container">
+      <video id="video" autoplay playsinline muted></video>
+      <div class="capture-zone"></div>
+      <div class="result" id="ocrResult">Align text in the yellow box</div>
+      <div class="status" id="status">⚡ Waiting for camera...</div>
+      <button id="manualScan">⟳ Scan now</button>
+    </div>
+
+    <script>
+      // ----- 1. Get camera feed -----
+      const video = document.getElementById("video");
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      let ocrInterval = null;
+
+      async function initCamera() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment" }, // use back camera
+          });
+          video.srcObject = stream;
+          await video.play();
+          document.getElementById("status").innerHTML =
+            "✅ Camera ready – OCR every 1 second";
+          startPeriodicOCR();
+        } catch (err) {
+          document.getElementById("status").innerHTML =
+            "❌ Camera error: " + err.message;
+          console.error(err);
+        }
+      }
+
+      // ----- 2. Capture only the region defined by the yellow box -----
+      function getCroppedImage() {
+        if (!video.videoWidth || !video.videoHeight) return null;
+
+        const videoRect = video.getBoundingClientRect();
+        const zoneRect = document
+          .querySelector(".capture-zone")
+          .getBoundingClientRect();
+
+        // Calculate the relative position of the zone inside the video element
+        const scaleX = video.videoWidth / videoRect.width;
+        const scaleY = video.videoHeight / videoRect.height;
+
+        let cropX = (zoneRect.left - videoRect.left) * scaleX;
+        let cropY = (zoneRect.top - videoRect.top) * scaleY;
+        let cropW = zoneRect.width * scaleX;
+        let cropH = zoneRect.height * scaleY;
+
+        // Clamp to video boundaries
+        cropX = Math.max(0, cropX);
+        cropY = Math.max(0, cropY);
+        cropW = Math.min(video.videoWidth - cropX, cropW);
+        cropH = Math.min(video.videoHeight - cropY, cropH);
+
+        if (cropW <= 0 || cropH <= 0) return null;
+
+        canvas.width = cropW;
+        canvas.height = cropH;
+        ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+        return canvas.toDataURL("image/png");
+      }
+
+      // ----- 3. Run OCR on the cropped region -----
+      async function runOCR() {
+        const imgData = getCroppedImage();
+        if (!imgData) {
+          document.getElementById("ocrResult").innerHTML =
+            "⚠️ Adjust phone – region out of view";
+          return;
+        }
+
+        document.getElementById("status").innerHTML = "📖 OCR processing...";
+        try {
+          // Tesseract works extremely well on clean typography texts
+          const {
+            data: { text },
+          } = await Tesseract.recognize(
+            imgData,
+            "eng", // language – change to 'chi_sim' for Chinese if needed
+            {
+              logger: (m) => console.log(m), // optional, see progress in console
+              tessedit_pageseg_mode: 7, // treat image as a single text line
+              tessedit_char_whitelist:
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:;!?-",
+            },
+          );
+          const cleaned = text.trim() || "∅ (no text detected)";
+          document.getElementById("ocrResult").innerHTML = cleaned;
+          document.getElementById("status").innerHTML =
+            "✅ OCR done – next scan in 1s";
+        } catch (err) {
+          document.getElementById("ocrResult").innerHTML = "OCR error";
+          document.getElementById("status").innerHTML = "⚠️ " + err.message;
+          console.error(err);
+        }
+      }
+
+      // ----- 4. Automatic scan every second (like Pleco's real‑time feel) -----
+      function startPeriodicOCR() {
+        if (ocrInterval) clearInterval(ocrInterval);
+        ocrInterval = setInterval(() => {
+          runOCR();
+        }, 1000); // 1 frame per second – enough for hobby & saves battery
+      }
+
+      // Manual scan button for instant check
+      document.getElementById("manualScan").addEventListener("click", () => {
+        runOCR();
+      });
+
+      // Wait for video metadata then start
+      video.addEventListener("loadedmetadata", () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        document.getElementById("status").innerHTML =
+          "📱 Ready – point at printed typography";
+      });
+
+      initCamera();
+    </script>
+  </body>
+</html>
